@@ -1,4 +1,4 @@
-# pilight USB Nano (& Mini Pro)
+# pilight USB Nano (ot only for Nano)
 
 The pilight Arduino Nano software allows any computer with an USB or serial port to work with pilight.
 
