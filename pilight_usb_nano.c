@@ -25,19 +25,26 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <avr/power.h>
+#include <avr/wdt.h> 
+#include <avr/eeprom.h>
 
-#define BUFFER_SIZE 					256
+#define BUFFER_SIZE 				256
 #define MAX_PULSE_TYPES				10
-#define BAUD									57600
+#define BAUD					57600
 /* Number devided by 10 */
 #define MIN_PULSELENGTH 			8			//tested to work down to 30us pulsewidth (=2)
 #define MAX_PULSELENGTH 			1600
-#define VERSION								1
+#define VERSION					1
 
-volatile uint32_t minrawlen = 1000;
-volatile uint32_t maxrawlen = 0;
-volatile uint32_t mingaplen = 10000;
+volatile uint32_t minrawlen = 10;
+volatile uint32_t maxrawlen = 100;
+volatile uint32_t mingaplen = 300;
 volatile uint32_t maxgaplen = 5100;
+
+uint32_t EEMEM Eminrawlen = 10;
+uint32_t EEMEM Emaxrawlen = 100;
+uint32_t EEMEM Emingaplen = 300;
+uint32_t EEMEM Emaxgaplen = 5100;
 
 const uint16_t MIN_2X_BAUD = F_CPU / (4 * (2 * 0XFFF + 1)) + 1;
 
@@ -52,10 +59,16 @@ const uint16_t MIN_2X_BAUD = F_CPU / (4 * (2 * 0XFFF + 1)) + 1;
 // off c:102020202020202020220202020020202200202200202020202020202020202203;p:279,2511,1395,9486@
 
 char data[BUFFER_SIZE];
-volatile unsigned long ten_us_counter1 = 0;
-volatile uint16_t ten_us_counter = 0, codes[BUFFER_SIZE], plstypes[MAX_PULSE_TYPES];
+uint8_t sec_counter = 0;
+volatile uint16_t ten_us_counter1 = 0, ten_us_counter = 0, codes[BUFFER_SIZE], plstypes[MAX_PULSE_TYPES];
 volatile uint8_t state = 0, codelen = 0, repeats = 0, pos = 0;
-volatile uint8_t valid_buffer = 0x00, r = 0, q = 0, rawlen = 0, nrpulses = 0;
+volatile uint8_t r = 0, q = 0, rawlen = 0, nrpulses = 0;
+
+#ifdef SEND_SPS
+volatile uint8_t sendspaces = 1;
+#else
+volatile uint8_t sendspaces = 0;
+#endif
 
 void initUART(void) {
   uint16_t x = 0;
@@ -83,8 +96,11 @@ void initUART(void) {
 void delayMicroseconds(unsigned int us) {
 	if(--us == 0)
 		return;
-
+#if F_CPU == 16000000UL
 	us <<= 2;
+#else
+	us <<= 1;	
+#endif
 	us -= 2;
 
 	__asm__ __volatile__ (
@@ -155,15 +171,28 @@ void setup() {
 
 	// TIMER = (F_CPU / PRESCALER)
 	// OCR = ((F_CPU / PRESCALER) * SECONDS) - 1
-	OCR2A = 0x13;
+#if F_CPU == 16000000UL
+	OCR2A = 160;
+#else
+	OCR2A = 80 - 1;
+#endif
 	TIMSK2 |= _BV(OCIE2A);
 	TCCR2A = TCCR2A | (1 << WGM21);
-	TCCR2B = TCCR2B | (1 << CS21);
+	TCCR2B = TCCR2B | (1 << CS20);
 
 	PCMSK2 |= _BV(PCINT18);
 	PCICR |= _BV(PCIE2);
 	
 	initUART();
+
+	eeprom_busy_wait();
+        minrawlen = eeprom_read_dword(&Eminrawlen);
+	eeprom_busy_wait();
+	maxrawlen = eeprom_read_dword(&Emaxrawlen);
+	eeprom_busy_wait();
+	mingaplen = eeprom_read_dword(&Emingaplen);
+	eeprom_busy_wait();
+	maxgaplen = eeprom_read_dword(&Emaxgaplen);
 
 	sei();
 }
@@ -206,23 +235,31 @@ void receive() {
 				data[i] = '\0';
 				if(x == 0) {
 					minrawlen = atol(&data[s]);
+					eeprom_busy_wait();
+					eeprom_update_dword(&Eminrawlen,minrawlen);	
 				}
 				if(x == 1) {
 					maxrawlen = atol(&data[s]);
+					eeprom_busy_wait();
+					eeprom_update_dword(&Emaxrawlen,maxrawlen);
 				}
 				if(x == 2) {
 					mingaplen = atoi(&data[s])/10;
+					eeprom_busy_wait();
+					eeprom_update_dword(&Emingaplen,mingaplen);
 				}
+
 				x++;
 				s = i+1;
 			}
 		}
+
 		if(x == 3) {
 			maxgaplen = atol(&data[s])/10;
+			eeprom_busy_wait();
+			eeprom_update_dword(&Emaxgaplen,maxgaplen);
 		}
-		/*
-		 * Once we tuned our firmware send back our settings + fw version
-		 */
+
 		sprintf(data, "v:%lu,%lu,%lu,%lu,%d,%d,%d@", minrawlen, maxrawlen, mingaplen*10, maxgaplen*10, VERSION, MIN_PULSELENGTH, MAX_PULSELENGTH);
 		writeString(data);
 	} else if(scode > 0 && spulse > 0 && srepeat > 0) {
@@ -273,10 +310,6 @@ ISR(TIMER2_COMPA_vect) {
 	cli();
 	ten_us_counter++;
 	ten_us_counter1++;
-	if(ten_us_counter1 > 100000) {	
-		putByte('\n');
-		ten_us_counter1 = 0;
-	}
 	sei();
 }
 
@@ -289,13 +322,15 @@ void broadcast() {
 		match = 0;
 		for(x=0;x<MAX_PULSE_TYPES;x++) {
 			/* We device these numbers by 10 to normalize them a bit */
-			if(((plstypes[x]/10)-(codes[i]/10)) <= 2) {
+			//if(((plstypes[x]/10)-(codes[i]/10)) <= 2) {
+			if(abs((plstypes[x])*10-(codes[i])*10) <= (codes[i]*3)) {
 				/* Every 'space' is followed by a 'pulse'.
-				 * All spaces are stripped to spare
+				 * if SEND_SPS not defined all spaces are stripped to spare
 				 * resources. The spaces can easily be
 				 * added afterwards.
 				 */
-				if((i%2) == 1) {
+				//plstypes[x] = ((plstypes[x] + codes[i]) / 2);
+				if(sendspaces || ((i%2) == 1)) {
 					/* Write numbers */
 					putByte(48+x);
 				}
@@ -304,13 +339,18 @@ void broadcast() {
 			}
 		}
 		if(match == 0) {
-			plstypes[p++] = codes[i];
-			/* See above */
-			if((i%2) == 1) {
-				putByte(48+p-1);
+			if (p < MAX_PULSE_TYPES) {
+				plstypes[p++] = codes[i];
+				/* See above */
+				if(sendspaces || ((i%2) == 1)) {
+					putByte(48+p-1);
+				}
+			} else {
+				putByte('X');
 			}
 		}
 	}
+
 	putByte(';');
 	putByte('p');
 	putByte(':');
@@ -349,6 +389,7 @@ ISR(PCINT2_vect){
 					 */
 					if(rawlen == nrpulses) {
 						broadcast();
+                                                TCNT2 = 0;
 					}
 					rawlen = nrpulses;
 				}
@@ -357,11 +398,30 @@ ISR(PCINT2_vect){
 		}
 	}
 	ten_us_counter = 0;
-	TCNT1 = 0;
 	sei();
 }
 
 int main(void) {
+        wdt_disable(); 
 	setup();
-	while(1);
+        wdt_reset();
+	wdt_enable(WDTO_500MS);
+	while(1){
+		 if(ten_us_counter1 > 10000) {
+		 	wdt_reset();
+			sec_counter++;
+			ten_us_counter1 = 0;
+			if(sec_counter >= 10) {				
+				putByte('\n');
+				sec_counter = 0;
+			}
+		 }
+#ifdef USE_LED
+        	if (bit_is_clear(PIND, PD2)) {
+			PORTB &= ~(1<<PB5);
+		} else {
+			PORTB |=  (1<<PB5);
+		}
+#endif
+	}
 }
