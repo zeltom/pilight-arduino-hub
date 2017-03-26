@@ -1,10 +1,15 @@
-# pilight USB Nano
+# pilight USB Nano (& Mini Pro)
 
-The pilight Arduino Nano software allows any computer with an USB port to work with pilight.
+The pilight Arduino Nano software allows any computer with an USB or serial port to work with pilight.
+
+NOW working with Arduino Mini Pro 3.3V 8Mhz version.
 
 1. Compile the firmware:
 ```
 avr-gcc -Os -Wall -DF_CPU=16000000UL -mmcu=atmega328p -c -o pilight_usb_nano.o pilight_usb_nano.c -lm -I.
+or (if use 8Mhz type arduino)
+avr-gcc -Os -Wall -DF_CPU=8000000UL -mmcu=atmega328p -c -o pilight_usb_nano.o pilight_usb_nano.c -lm -I.
+
 avr-gcc -mmcu=atmega328p pilight_usb_nano.o -o pilight_usb_nano
 avr-objcopy -O ihex -R .eeprom pilight_usb_nano pilight_usb_nano.hex
 ```
