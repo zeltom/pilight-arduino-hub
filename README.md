@@ -1,8 +1,8 @@
-# pilight USB Nano (ot only for Nano)
+# pilight Arduino Hub (ot only for Nano)
 
 The pilight Arduino Hub (forked from Arduino Nano) software allows any computer with an USB or serial port to work with pilight.
 
-NOW working with Arduino Mini Pro 3.3V 8Mhz version.
+(Note: Working with Arduino Mini Pro 3.3V 8Mhz version.)
 
 1. Compile the firmware:
 ```
