@@ -2,7 +2,7 @@
 
 The pilight Arduino Hub (forked from Arduino Nano) software allows any computer with an USB or serial port to work with pilight.
 
-(Note: Working with Arduino Mini Pro 3.3V 8Mhz version.)
+(Note: Working with Arduino Mini & Nano & Uno.)
 
 1. Compile the firmware:
 ```
