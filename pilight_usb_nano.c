@@ -405,7 +405,7 @@ int main(void) {
         wdt_disable(); 
 	setup();
         wdt_reset();
-	wdt_enable(WDTO_500MS);
+	wdt_enable(WDTO_1S);
 	while(1){
 		 if(ten_us_counter1 > 10000) {
 		 	wdt_reset();
