@@ -283,6 +283,7 @@ void receive() {
 				PORTD ^= _BV(PORTD5); 
 				delayMicroseconds(plstypes[data[z] - '0']);      
 			}
+			wdt_reset();
 		}
 		PORTD &= ~_BV(PORTD5);
 
