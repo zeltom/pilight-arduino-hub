@@ -166,6 +166,7 @@ void setup() {
 	//power_timer2_disable();
 
 	DDRD |= _BV(DDD5);
+	DDRD |= _BV(DDD4);
 	DDRB |= _BV(DDB5);
 	SREG = oldSREG;
 
@@ -278,6 +279,8 @@ void receive() {
 		codelen = strlen(&data[scode]);
 		repeats = atoi(&data[srepeat]);
 		cli();
+		PORTD |=  _BV(PORTD4);
+		delayMicroseconds(1000);
 		for(i=0;i<repeats;i++) {
 			for(z = scode; z < scode + codelen; z++) {
 				PORTD ^= _BV(PORTD5); 
@@ -291,7 +294,7 @@ void receive() {
 			plstypes[r] = 0;
 		}
 		q = 0;
-
+                PORTD &= ~_BV(PORTD4);
 		sei();
 	}
 }
